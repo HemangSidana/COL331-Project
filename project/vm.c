@@ -190,6 +190,12 @@ inituvm(pde_t *pgdir, char *init, uint sz)
   memset(mem, 0, PGSIZE);
   mappages(pgdir, 0, PGSIZE, V2P(mem), PTE_W|PTE_U);
   memmove(mem, init, sz);
+
+  pte_t* pte = walkpgdir(pgdir,0,0);
+  if(pte==0){
+    panic("Page Table in inituvm is not present");
+  }
+  share_add(V2P(mem),pte);
 }
 
 // Load a program segment into pgdir.  addr must be page-aligned
@@ -277,8 +283,8 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
       if(pa == 0)
         panic("kfree");
       char *v = P2V(pa);
-      kfree(v); 
       share_remove(pa,pte);
+      kfree(v); 
       *pte = 0;
 
     }
@@ -354,7 +360,7 @@ copyuvm(pde_t *pgdir, uint sz)
       goto bad;
     }
 
-    pte_t* pte_child = walkpgdir(pgdir,(char*) i, 0);
+    pte_t* pte_child = walkpgdir(d,(char*) i, 0);
     if(pte_child==0){
       panic("Page Table of Child is not present");
     }
