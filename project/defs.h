@@ -69,6 +69,10 @@ uint            num_of_FreePages(void);
 void            kfree(char*);
 void            kinit1(void*, void*);
 void            kinit2(void*, void*);
+void            init_rmap(void);
+void            share_add(uint, pte_t*);
+void            share_remove(uint, pte_t*);
+void            share_split(uint, pte_t*);
 
 // kbd.c
 void            kbdintr(void);
@@ -187,6 +191,16 @@ void            switchuvm(struct proc*);
 void            switchkvm(void);
 int             copyout(pde_t*, uint, void*, uint);
 void            clearpteu(pde_t *pgdir, char *uva);
+pte_t *         walkpgdir(pde_t *, const void *, int);
+
+// pageswap.c
+void            init_slot();
+// pte_t*          victim_page();
+// void            unset_access(pde_t* , int);
+// void            allocate_page();
+// void            clean_swap(pde_t*);
+void            page_fault();
+
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

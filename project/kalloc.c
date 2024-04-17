@@ -2,6 +2,9 @@
 // memory for user processes, kernel stacks, page table pages,
 // and pipe buffers. Allocates 4096-byte pages.
 
+#include <stdio.h>
+#include <stdlib.h>
+
 #include "types.h"
 #include "defs.h"
 #include "param.h"
@@ -24,6 +27,80 @@ struct {
   struct run *freelist;
 } kmem;
 
+
+struct proc_list{
+  struct proc_list* next;
+  pte_t* pte;
+};
+
+struct rmap{
+  struct spinlock lock;
+  struct proc_list* pl;
+  int ref;
+};
+
+struct rmap allmap[PHYSTOP/PGSIZE];
+
+
+void init_rmap(void){
+  uint sz= PHYSTOP/PGSIZE;
+  for(uint i=0; i<sz; i++){
+    initlock(&(allmap[i].lock), "rmap");
+    allmap[i].ref=0;
+  }
+}
+
+void share_add(uint pa, pte_t* pte_child){
+  uint index= pa/PGSIZE;
+  struct rmap cur= allmap[index];
+  acquire(&(cur.lock));
+  struct proc_list* node= (struct proc_list*)malloc(sizeof(struct proc_list));
+  node->pte= pte_child;
+  node->next= cur.pl;
+  cur.pl=node;
+  cur.ref++;
+  release(&(cur.lock));
+}
+
+void share_remove(uint pa, pte_t* pte_proc) {
+  uint index = pa/PGSIZE;
+  struct rmap* cur = &allmap[index];
+  acquire(&(cur->lock));
+  int is_prev=0;
+  struct proc_list* current = cur->pl;
+  struct proc_list* prev = current;
+  int itr= cur->ref;
+  while(itr--){
+    if (current->pte == pte_proc) {
+      if (is_prev == 0) {
+          cur->pl = current->next;
+      } else {
+          prev->next = current->next;
+      }
+      free(current);
+      cur->ref--;
+      if(cur->ref == 1){
+        *(cur->pl->pte) |= PTE_W;
+      }
+      release(&(cur->lock));
+      return;
+    }
+    prev = current;
+    current = current->next;
+    is_prev=1;
+  }
+  panic("Page table entry not found in rmap");
+  release(&(cur->lock));
+}
+
+void share_split(uint pa, pte_t* pte_proc){
+  uint flag= PTE_FLAGS(*pte_proc);
+  flag |= PTE_W;
+  share_remove(pa,pte_proc);
+  char* mem= kalloc();
+  *pte_proc = PTE_ADDR(V2P(mem)) | flag;
+}
+
 // Initialization happens in two phases.
 // 1. main() calls kinit1() while still using entrypgdir to place just
 // the pages mapped by entrypgdir on free list.
@@ -35,6 +112,7 @@ kinit1(void *vstart, void *vend)
   initlock(&kmem.lock, "kmem");
   kmem.use_lock = 0;
   freerange(vstart, vend);
+  init_rmap();
 }
 
 void
@@ -101,8 +179,14 @@ kalloc(void)
     
   if(kmem.use_lock)
     release(&kmem.lock);
-  return (char*)r;
+  if(r){
+    return (char*)r;
+  }
+  // allocate_page();
+  panic("Insufficient Memory");
+  return kalloc();
 }
+
 uint 
 num_of_FreePages(void)
 {

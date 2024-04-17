@@ -244,6 +244,12 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
       kfree(mem);
       return 0;
     }
+
+    pte_t* pte_child = walkpgdir(pgdir,(char*) a, 0);
+    if(pte_child==0){
+      panic("Page Table of Child is not present");
+    }
+    share_add(mem,pte_child);
   }
   return newsz;
 }
@@ -271,8 +277,10 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
       if(pa == 0)
         panic("kfree");
       char *v = P2V(pa);
-      kfree(v);
+      kfree(v); 
+      share_remove(pa,pte);
       *pte = 0;
+
     }
   }
   return newsz;
@@ -328,14 +336,30 @@ copyuvm(pde_t *pgdir, uint sz)
     if(!(*pte & PTE_P))
       panic("copyuvm: page not present");
     pa = PTE_ADDR(*pte);
+    *pte &= ~PTE_W;
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto bad;
-    memmove(mem, (char*)P2V(pa), PGSIZE);
-    if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0) {
+
+    // if((mem = kalloc()) == 0)
+    //   goto bad;
+    // memmove(mem, (char*)P2V(pa), PGSIZE);
+    // if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0) {
+    //   kfree(mem);
+    //   goto bad;
+    // }
+
+    // No need to allocate new pages
+    // Just copy page table with same address
+    if(mappages(d, (void*)i, PGSIZE, pa, flags) < 0) {
       kfree(mem);
       goto bad;
     }
+
+    pte_t* pte_child = walkpgdir(pgdir,(char*) i, 0);
+    if(pte_child==0){
+      panic("Page Table of Child is not present");
+    }
+    // Page table entry pte_child stores address pa of shared page
+    share_add(pa,pte_child);
   }
   return d;
 
