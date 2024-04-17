@@ -32,7 +32,7 @@ seginit(void)
 // Return the address of the PTE in page table pgdir
 // that corresponds to virtual address va.  If alloc!=0,
 // create any required page table pages.
-static pte_t *
+pte_t *
 walkpgdir(pde_t *pgdir, const void *va, int alloc)
 {
   pde_t *pde;
@@ -249,7 +249,7 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
     if(pte_child==0){
       panic("Page Table of Child is not present");
     }
-    share_add(mem,pte_child);
+    share_add(V2P(mem),pte_child);
   }
   return newsz;
 }

@@ -2,8 +2,6 @@
 // memory for user processes, kernel stacks, page table pages,
 // and pipe buffers. Allocates 4096-byte pages.
 
-#include <stdio.h>
-#include <stdlib.h>
 
 #include "types.h"
 #include "defs.h"
@@ -28,14 +26,10 @@ struct {
 } kmem;
 
 
-struct proc_list{
-  struct proc_list* next;
-  pte_t* pte;
-};
-
 struct rmap{
   struct spinlock lock;
-  struct proc_list* pl;
+  pte_t* pl[NPROC];
+  int free[NPROC];
   int ref;
 };
 
@@ -46,50 +40,48 @@ void init_rmap(void){
   uint sz= PHYSTOP/PGSIZE;
   for(uint i=0; i<sz; i++){
     initlock(&(allmap[i].lock), "rmap");
-    allmap[i].ref=0;
+    (&allmap[i])->ref=0;
+    for(uint j=0; j<NPROC; j++){
+      (&allmap[i])->free[j]=1;
+    }
   }
 }
 
 void share_add(uint pa, pte_t* pte_child){
   uint index= pa/PGSIZE;
-  struct rmap cur= allmap[index];
-  acquire(&(cur.lock));
-  struct proc_list* node= (struct proc_list*)malloc(sizeof(struct proc_list));
-  node->pte= pte_child;
-  node->next= cur.pl;
-  cur.pl=node;
-  cur.ref++;
-  release(&(cur.lock));
+  struct rmap* cur= &allmap[index];
+  acquire(&(cur->lock));
+  cur->ref++;
+  uint i;
+  for(i=0; i<NPROC; i++){
+    if(cur->free[i]==1) break;
+  }
+  if(i==NPROC){
+    panic("rmap filled");
+  }
+  cur->free[i]=0;
+  cur->pl[i]= pte_child;
+  release(&(cur->lock));
 }
 
 void share_remove(uint pa, pte_t* pte_proc) {
   uint index = pa/PGSIZE;
   struct rmap* cur = &allmap[index];
   acquire(&(cur->lock));
-  int is_prev=0;
-  struct proc_list* current = cur->pl;
-  struct proc_list* prev = current;
-  int itr= cur->ref;
-  while(itr--){
-    if (current->pte == pte_proc) {
-      if (is_prev == 0) {
-          cur->pl = current->next;
-      } else {
-          prev->next = current->next;
-      }
-      free(current);
-      cur->ref--;
-      if(cur->ref == 1){
-        *(cur->pl->pte) |= PTE_W;
-      }
-      release(&(cur->lock));
-      return;
-    }
-    prev = current;
-    current = current->next;
-    is_prev=1;
+  uint i;
+  for(i=0; i<NPROC; i++){
+    if(cur->pl[i]==pte_proc && cur->free[i]==0) break;
   }
-  panic("Page table entry not found in rmap");
+  if(i==NPROC) panic("Page table entry not found in rmap");
+  cur->free[i]=1;
+  cur->ref--;
+  if(cur->ref==1){
+    for(uint j=0; j<NPROC; j++){
+      if(cur->free[j]==0){
+        *(cur->pl[j]) |= PTE_W;
+      }
+    }
+  }
   release(&(cur->lock));
 }
 
@@ -99,6 +91,7 @@ void share_split(uint pa, pte_t* pte_proc){
   share_remove(pa,pte_proc);
   char* mem= kalloc();
   *pte_proc = PTE_ADDR(V2P(mem)) | flag;
+  share_add(V2P(mem),pte_proc);
 }
 
 // Initialization happens in two phases.
