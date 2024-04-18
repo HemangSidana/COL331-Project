@@ -37,6 +37,7 @@ readsb(int dev, struct superblock *sb)
   memmove(sb, bp->data, sizeof(*sb));
   brelse(bp);
   init_slot();
+  // init_rmap();
 }
 
 // Zero a block.

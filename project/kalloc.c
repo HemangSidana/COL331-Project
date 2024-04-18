@@ -37,6 +37,7 @@ struct rmap allmap[PHYSTOP/PGSIZE];
 
 
 void init_rmap(void){
+  cprintf(".........start rmap..........\n");
   uint sz= PHYSTOP/PGSIZE;
   for(uint i=0; i<sz; i++){
     initlock(&(allmap[i].lock), "rmap");
@@ -45,9 +46,11 @@ void init_rmap(void){
       (&allmap[i])->free[j]=1;
     }
   }
+  cprintf(".........initialized rmap..........\n");
 }
 
 void share_add(uint pa, pte_t* pte_child){
+  // cprintf("added\n");
   uint index= pa/PGSIZE;
   struct rmap* cur= &allmap[index];
   acquire(&(cur->lock));
@@ -64,7 +67,8 @@ void share_add(uint pa, pte_t* pte_child){
   release(&(cur->lock));
 }
 
-void share_remove(uint pa, pte_t* pte_proc) {
+int share_remove(uint pa, pte_t* pte_proc) {
+  // cprintf("removed\n");
   uint index = pa/PGSIZE;
   struct rmap* cur = &allmap[index];
   acquire(&(cur->lock));
@@ -72,7 +76,11 @@ void share_remove(uint pa, pte_t* pte_proc) {
   for(i=0; i<NPROC; i++){
     if(cur->pl[i]==pte_proc && cur->free[i]==0) break;
   }
-  if(i==NPROC) panic("Page table entry not found in rmap");
+  // if(i==NPROC) panic("Page table entry not found in rmap");
+  if(i==NPROC){
+    release(&(cur->lock));
+    return;
+  }
   cur->free[i]=1;
   cur->ref--;
   if(cur->ref==1){
@@ -83,14 +91,18 @@ void share_remove(uint pa, pte_t* pte_proc) {
     }
   }
   release(&(cur->lock));
+  return cur->ref;
 }
 
 void share_split(uint pa, pte_t* pte_proc){
+  // cprintf("share split called, %d is pa, %d is pte\n",pa,pte_proc);
   uint flag= PTE_FLAGS(*pte_proc);
   flag |= PTE_W;
   share_remove(pa,pte_proc);
   char* mem= kalloc();
+  memmove(mem,(char*)P2V(pa),PGSIZE);
   *pte_proc = PTE_ADDR(V2P(mem)) | flag;
+  // cprintf("update pa is %d\n",PTE_ADDR(*pte_proc));
   share_add(V2P(mem),pte_proc);
 }
 
@@ -102,6 +114,7 @@ void share_split(uint pa, pte_t* pte_proc){
 void
 kinit1(void *vstart, void *vend)
 {
+  cprintf("..........kinit1 called.........\n");
   initlock(&kmem.lock, "kmem");
   kmem.use_lock = 0;
   freerange(vstart, vend);
@@ -123,7 +136,6 @@ freerange(void *vstart, void *vend)
   for(; p + PGSIZE <= (char*)vend; p += PGSIZE)
   {
     kfree(p);
-    kmem.num_free_pages+=1;
   }
     
 }
@@ -151,6 +163,7 @@ kfree(char *v)
   kmem.freelist = r;
   if(kmem.use_lock)
     release(&kmem.lock);
+  // cprintf("page freed by kfree at pa %d\n",V2P(v));
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -173,6 +186,7 @@ kalloc(void)
   if(kmem.use_lock)
     release(&kmem.lock);
   if(r){
+    // cprintf("page allocated by kalloc at pa %d\n",V2P(r));
     return (char*)r;
   }
   // allocate_page();

@@ -195,6 +195,7 @@ inituvm(pde_t *pgdir, char *init, uint sz)
   if(pte==0){
     panic("Page Table in inituvm is not present");
   }
+  // cprintf("share_add (inituvm) %d is pa and %d is pte\n",V2P(mem), pte);
   share_add(V2P(mem),pte);
 }
 
@@ -251,11 +252,12 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
       return 0;
     }
 
-    pte_t* pte_child = walkpgdir(pgdir,(char*) a, 0);
-    if(pte_child==0){
+    pte_t* pte = walkpgdir(pgdir,(char*) a, 0);
+    if(pte==0){
       panic("Page Table of Child is not present");
     }
-    share_add(V2P(mem),pte_child);
+    // cprintf("share_add (allocuvm) %d is pa and %d is pte\n",V2P(mem), pte);
+    share_add(V2P(mem),pte);
   }
   return newsz;
 }
@@ -283,8 +285,9 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
       if(pa == 0)
         panic("kfree");
       char *v = P2V(pa);
-      share_remove(pa,pte);
-      kfree(v); 
+      // cprintf("share_remove (deallocuvm) %d is pa and %d is pte\n",pa, pte);
+      int left=share_remove(pa,pte);
+      if(left==0) kfree(v); 
       *pte = 0;
 
     }
@@ -356,7 +359,6 @@ copyuvm(pde_t *pgdir, uint sz)
     // No need to allocate new pages
     // Just copy page table with same address
     if(mappages(d, (void*)i, PGSIZE, pa, flags) < 0) {
-      kfree(mem);
       goto bad;
     }
 
@@ -365,8 +367,10 @@ copyuvm(pde_t *pgdir, uint sz)
       panic("Page Table of Child is not present");
     }
     // Page table entry pte_child stores address pa of shared page
+    // cprintf("share_add (copyuvm) %d is pa and %d is pte\n",pa, pte_child);
     share_add(pa,pte_child);
   }
+  lcr3(V2P(pgdir));
   return d;
 
 bad:

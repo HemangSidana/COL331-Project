@@ -71,7 +71,7 @@ void            kinit1(void*, void*);
 void            kinit2(void*, void*);
 void            init_rmap(void);
 void            share_add(uint, pte_t*);
-void            share_remove(uint, pte_t*);
+int            share_remove(uint, pte_t*);
 void            share_split(uint, pte_t*);
 
 // kbd.c

@@ -111,4 +111,5 @@ void page_fault(){
     pte_t *pte = walkpgdir(p->pgdir, (void*)va, 0);
     uint pa= PTE_ADDR(*pte);
     share_split(pa,pte);
+    lcr3(V2P(p->pgdir));
 }
