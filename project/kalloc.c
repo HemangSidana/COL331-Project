@@ -25,87 +25,6 @@ struct {
   struct run *freelist;
 } kmem;
 
-
-struct rmap{
-  struct spinlock lock;
-  pte_t* pl[NPROC];
-  int free[NPROC];
-  int ref;
-};
-
-struct rmap allmap[PHYSTOP/PGSIZE];
-
-
-void init_rmap(void){
-  cprintf(".........start rmap..........\n");
-  uint sz= PHYSTOP/PGSIZE;
-  for(uint i=0; i<sz; i++){
-    initlock(&(allmap[i].lock), "rmap");
-    (&allmap[i])->ref=0;
-    for(uint j=0; j<NPROC; j++){
-      (&allmap[i])->free[j]=1;
-    }
-  }
-  cprintf(".........initialized rmap..........\n");
-}
-
-void share_add(uint pa, pte_t* pte_child){
-  // cprintf("added\n");
-  uint index= pa/PGSIZE;
-  struct rmap* cur= &allmap[index];
-  acquire(&(cur->lock));
-  cur->ref++;
-  uint i;
-  for(i=0; i<NPROC; i++){
-    if(cur->free[i]==1) break;
-  }
-  if(i==NPROC){
-    panic("rmap filled");
-  }
-  cur->free[i]=0;
-  cur->pl[i]= pte_child;
-  release(&(cur->lock));
-}
-
-int share_remove(uint pa, pte_t* pte_proc) {
-  // cprintf("removed\n");
-  uint index = pa/PGSIZE;
-  struct rmap* cur = &allmap[index];
-  acquire(&(cur->lock));
-  uint i;
-  for(i=0; i<NPROC; i++){
-    if(cur->pl[i]==pte_proc && cur->free[i]==0) break;
-  }
-  // if(i==NPROC) panic("Page table entry not found in rmap");
-  if(i==NPROC){
-    release(&(cur->lock));
-    return;
-  }
-  cur->free[i]=1;
-  cur->ref--;
-  if(cur->ref==1){
-    for(uint j=0; j<NPROC; j++){
-      if(cur->free[j]==0){
-        *(cur->pl[j]) |= PTE_W;
-      }
-    }
-  }
-  release(&(cur->lock));
-  return cur->ref;
-}
-
-void share_split(uint pa, pte_t* pte_proc){
-  // cprintf("share split called, %d is pa, %d is pte\n",pa,pte_proc);
-  uint flag= PTE_FLAGS(*pte_proc);
-  flag |= PTE_W;
-  share_remove(pa,pte_proc);
-  char* mem= kalloc();
-  memmove(mem,(char*)P2V(pa),PGSIZE);
-  *pte_proc = PTE_ADDR(V2P(mem)) | flag;
-  // cprintf("update pa is %d\n",PTE_ADDR(*pte_proc));
-  share_add(V2P(mem),pte_proc);
-}
-
 // Initialization happens in two phases.
 // 1. main() calls kinit1() while still using entrypgdir to place just
 // the pages mapped by entrypgdir on free list.
@@ -114,7 +33,6 @@ void share_split(uint pa, pte_t* pte_proc){
 void
 kinit1(void *vstart, void *vend)
 {
-  cprintf("..........kinit1 called.........\n");
   initlock(&kmem.lock, "kmem");
   kmem.use_lock = 0;
   freerange(vstart, vend);
@@ -163,7 +81,6 @@ kfree(char *v)
   kmem.freelist = r;
   if(kmem.use_lock)
     release(&kmem.lock);
-  // cprintf("page freed by kfree at pa %d\n",V2P(v));
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -186,11 +103,9 @@ kalloc(void)
   if(kmem.use_lock)
     release(&kmem.lock);
   if(r){
-    // cprintf("page allocated by kalloc at pa %d\n",V2P(r));
     return (char*)r;
   }
-  // allocate_page();
-  panic("Insufficient Memory");
+  allocate_page();
   return kalloc();
 }
 

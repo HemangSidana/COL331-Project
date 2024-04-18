@@ -111,7 +111,7 @@ found:
   p->context = (struct context*)sp;
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
-
+  p->rss+=PGSIZE;
   return p;
 }
 
@@ -190,7 +190,7 @@ fork(void)
   }
 
   // Copy process state from proc.
-  if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
+  if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz,np)) == 0){
     kfree(np->kstack);
     np->kstack = 0;
     np->state = UNUSED;
@@ -286,6 +286,7 @@ wait(void)
       havekids = 1;
       if(p->state == ZOMBIE){
         // Found one.
+        clean_swap(p->pgdir);
         pid = p->pid;
         kfree(p->kstack);
         p->kstack = 0;
@@ -546,4 +547,37 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+struct proc * victim_proc(){
+    struct proc *p;
+    uint max_rss = 0;
+    struct proc *victim_proc=0;
+    int first=0;
+    acquire(&ptable.lock);
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+        if(p->state==UNUSED) continue;
+        if(!first){
+          first=1; victim_proc=p;
+        }
+        if(p->rss > max_rss || (p->rss==max_rss && p->pid< victim_proc->pid)){
+            victim_proc = p;
+            max_rss = p->rss;
+        }
+    }
+    release(&ptable.lock);
+    if(!first){
+      panic("All Processes are UNUSED");
+    }
+    return victim_proc;
+}
+
+int is_proc(int i){
+  struct proc* p= &ptable.proc[i];
+  if(p->state == UNUSED) return 0;
+  return 1;
+}
+
+struct proc* get_proc(int i){
+  return &ptable.proc[i];
 }

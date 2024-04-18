@@ -257,6 +257,7 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
       panic("Page Table of Child is not present");
     }
     // cprintf("share_add (allocuvm) %d is pa and %d is pte\n",V2P(mem), pte);
+    myproc()->rss+=PGSIZE;
     share_add(V2P(mem),pte);
   }
   return newsz;
@@ -289,7 +290,7 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
       int left=share_remove(pa,pte);
       if(left==0) kfree(v); 
       *pte = 0;
-
+      if(myproc()->rss>0) myproc()->rss-=PGSIZE;
     }
   }
   return newsz;
@@ -330,7 +331,7 @@ clearpteu(pde_t *pgdir, char *uva)
 // Given a parent process's page table, create a copy
 // of it for a child.
 pde_t*
-copyuvm(pde_t *pgdir, uint sz)
+copyuvm(pde_t *pgdir, uint sz, struct proc* p)
 {
   pde_t *d;
   pte_t *pte;
@@ -361,7 +362,7 @@ copyuvm(pde_t *pgdir, uint sz)
     if(mappages(d, (void*)i, PGSIZE, pa, flags) < 0) {
       goto bad;
     }
-
+    p->rss+=PGSIZE;
     pte_t* pte_child = walkpgdir(d,(char*) i, 0);
     if(pte_child==0){
       panic("Page Table of Child is not present");

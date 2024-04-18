@@ -60,4 +60,7 @@ struct dirent {
 struct swap_slot {
   int page_perm;  // Permission of the swapped memory page
   int is_free;    // Indicates if the swap slot is free (1) or not (0)
+  pte_t* pl[64];  // List of page table entries pointing to this page
+  int present[64];
+  int num; // number of processes using this page
 };

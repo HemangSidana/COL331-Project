@@ -15,6 +15,8 @@ void            binit(void);
 struct buf*     bread(uint, uint);
 void            brelse(struct buf*);
 void            bwrite(struct buf*);
+void            write_page(char *, uint);
+void            read_page(char *, uint);
 
 // console.c
 void            consoleinit(void);
@@ -69,10 +71,6 @@ uint            num_of_FreePages(void);
 void            kfree(char*);
 void            kinit1(void*, void*);
 void            kinit2(void*, void*);
-void            init_rmap(void);
-void            share_add(uint, pte_t*);
-int            share_remove(uint, pte_t*);
-void            share_split(uint, pte_t*);
 
 // kbd.c
 void            kbdintr(void);
@@ -126,6 +124,9 @@ int             wait(void);
 void            wakeup(void*);
 void            yield(void);
 void            print_rss(void);
+struct proc *   victim_proc(void);
+int             is_proc(int);
+struct proc*    get_proc(int);
 
 // swtch.S
 void            swtch(struct context**, struct context*);
@@ -186,7 +187,7 @@ int             deallocuvm(pde_t*, uint, uint);
 void            freevm(pde_t*);
 void            inituvm(pde_t*, char*, uint);
 int             loaduvm(pde_t*, char*, struct inode*, uint, uint);
-pde_t*          copyuvm(pde_t*, uint);
+pde_t*          copyuvm(pde_t*, uint, struct proc*);
 void            switchuvm(struct proc*);
 void            switchkvm(void);
 int             copyout(pde_t*, uint, void*, uint);
@@ -194,12 +195,20 @@ void            clearpteu(pde_t *pgdir, char *uva);
 pte_t*          walkpgdir(pde_t *pgdir, const void *va, int alloc);
 
 // pageswap.c
+void            init_rmap(void);
+void            share_add(uint, pte_t*);
+int             share_remove(uint, pte_t*);
+void            share_split(uint, pte_t*);
+void            add_swap(uint, uint, uint);
+void            remove_swap(uint, pte_t*);
 void            init_slot();
-// pte_t*          victim_page();
-// void            unset_access(pde_t* , int);
-// void            allocate_page();
-// void            clean_swap(pde_t*);
+pte_t*          victim_page();
+void            unset_access(pde_t*,int);
+void            allocate_page();
+void            clean_swap(pde_t*);
 void            page_fault();
+void            recover_swap(uint, uint);
+void            change_rss(uint, int);
 
 
 // number of elements in fixed-size array
