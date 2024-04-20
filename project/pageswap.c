@@ -40,6 +40,7 @@ void init_rmap(void){
 
 // Add pte_t* in rmap corresponding to physical page with address pa
 void share_add(uint pa, pte_t* pte_child){
+  if(*pte_child & PTE_S) panic("page is in swap space");
   uint index= pa/PGSIZE;
   struct rmap* cur= &allmap[index];
   acquire(&(cur->lock));
@@ -59,6 +60,7 @@ void share_add(uint pa, pte_t* pte_child){
 
 // Remove pte_t* in rmap corresponding to physical page with address pa
 int share_remove(uint pa, pte_t* pte_proc) {
+  if(*pte_proc & PTE_S) panic("page is in swap blocks");
   uint index = pa/PGSIZE;
   struct rmap* cur = &allmap[index];
   acquire(&(cur->lock));
@@ -98,7 +100,6 @@ void add_swap(uint pa, uint new_add, uint slot){
   uint z = pa/PGSIZE;
   struct rmap* cur = &allmap[z];
   acquire(&(cur->lock));
-  ss[slot].is_free=0;
   uint index=0;
   for(uint i=0; i<NPROC; i++){
     if(cur->free[i]==0){
@@ -113,6 +114,7 @@ void add_swap(uint pa, uint new_add, uint slot){
   }
   ss[slot].num=index;
   if(cur->ref!=0) panic("Reference count should be 0");
+  release(&(cur->lock));
 }
 
 
@@ -137,9 +139,27 @@ pte_t* victim_page(){
       pte_t* pte = walkpgdir(p->pgdir, (void*)i, 0);
       if(*pte & PTE_P){
         if(!(*pte & PTE_A)){
-          change_rss(PTE_ADDR(*pte),-1);
-          return pte;
-        }else{
+          int found=1;
+          int ind= PTE_ADDR(*pte)/PGSIZE;
+          struct rmap* cur= &allmap[ind];
+          acquire(&(cur->lock));
+          for(uint j=0; j<NPROC; j++){
+            if(cur->free[j]==0){
+              if(*(cur->pl[j]) & PTE_A){
+                found=0; break;
+              }
+            }
+          }
+          release(&(cur->lock));
+          if(found){
+            change_rss(PTE_ADDR(*pte),-1);
+            return pte;
+          } 
+          else count++;
+          // change_rss(PTE_ADDR(*pte),-1);
+          // return pte;
+        }
+        else{
           count++;
         }
       }
@@ -158,7 +178,16 @@ void unset_access(pde_t* p, int count){
     pte_t* pte = walkpgdir(p, (void*)i, 0);
     if(*pte & PTE_P){
       if(*pte & PTE_A){
-        *pte &= ~PTE_A;
+        // *pte &= ~PTE_A;
+        uint ind= PTE_ADDR(*pte)/PGSIZE;
+        struct rmap* cur= &allmap[ind];
+        acquire(&(cur->lock));
+        for(uint i=0; i<NPROC; i++){
+          if(cur->free[i]==0){
+            *(cur->pl[i]) &= ~PTE_A;
+          }
+        }
+        release(&cur->lock);
         z--;
       }
     }
@@ -181,7 +210,7 @@ void allocate_page(){
   write_page(page,2+8*slot);
   ss[slot].is_free = 0;
   ss[slot].page_perm = PTE_FLAGS(*pte);
-  uint new_add= slot << 12 | PTE_S;
+  uint new_add= (slot << 12) | PTE_S;
   add_swap(PTE_ADDR(*pte),new_add,slot);
   kfree(page);
   return;
@@ -222,11 +251,13 @@ void clean_swap(pde_t* pde){
 
 // Transfer page in swap slot to memory with new physical page address pa
 void recover_swap(uint pa, uint slot){
+  if(ss[slot].is_free) panic("slot is empty");
   for(int i=0; i<NPROC; i++){
     if(ss[slot].present[i]==1){
       *(ss[slot].pl[i])= pa;
       ss[slot].num--;
       ss[slot].present[i]=0;
+      share_add(pa,ss[slot].pl[i]);
     }
   }
   if(ss[slot].num!=0) panic("present list and num are inconsistend");
@@ -239,7 +270,7 @@ void page_fault(){
   uint va = rcr2();
   struct proc *p = myproc();
   pte_t *pte = walkpgdir(p->pgdir, (void*)va, 0);
-  if((*pte & PTE_S)){
+  if(*pte & PTE_S){
     uint slot = *pte >> 12;
     char* page = kalloc();
     read_page(page, 8*slot+2);
@@ -247,6 +278,7 @@ void page_fault(){
     uint new_add= V2P(page) | perm | PTE_A;
     recover_swap(new_add,slot);
     change_rss(V2P(page),1);
+    // lcr3(V2P(p->pgdir));
   }
   else if(!(*pte & PTE_W)){
     uint pa= PTE_ADDR(*pte);

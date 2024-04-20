@@ -195,7 +195,6 @@ inituvm(pde_t *pgdir, char *init, uint sz)
   if(pte==0){
     panic("Page Table in inituvm is not present");
   }
-  // cprintf("share_add (inituvm) %d is pa and %d is pte\n",V2P(mem), pte);
   share_add(V2P(mem),pte);
 }
 
@@ -256,7 +255,6 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
     if(pte==0){
       panic("Page Table of Child is not present");
     }
-    // cprintf("share_add (allocuvm) %d is pa and %d is pte\n",V2P(mem), pte);
     myproc()->rss+=PGSIZE;
     share_add(V2P(mem),pte);
   }
@@ -286,9 +284,15 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
       if(pa == 0)
         panic("kfree");
       char *v = P2V(pa);
-      // cprintf("share_remove (deallocuvm) %d is pa and %d is pte\n",pa, pte);
-      int left=share_remove(pa,pte);
-      if(left==0) kfree(v); 
+      if(*pte & PTE_S){
+        int slot= (*pte) >> 12;
+        remove_swap(slot,pte);
+      }
+      else{
+        int left=share_remove(pa,pte);
+        if(left==0) kfree(v); 
+      }
+      
       *pte = 0;
       if(myproc()->rss>0) myproc()->rss-=PGSIZE;
     }
@@ -357,6 +361,7 @@ copyuvm(pde_t *pgdir, uint sz, struct proc* p)
     //   goto bad;
     // }
 
+    if(*pte & PTE_S) panic("parent page is in swap space");
     // No need to allocate new pages
     // Just copy page table with same address
     if(mappages(d, (void*)i, PGSIZE, pa, flags) < 0) {
