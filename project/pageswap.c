@@ -290,6 +290,22 @@ void page_fault(){
   }
 }
 
+void page_fault_swap(pte_t* pte){
+  if(*pte & PTE_S){
+    uint slot = *pte >> 12;
+    char* page = kalloc();
+    read_page(page, 8*slot+2);
+    uint perm = ss[slot].page_perm;
+    uint new_add= V2P(page) | perm | PTE_A;
+    recover_swap(new_add,slot);
+    // change_rss(V2P(page),1);
+    // lcr3(V2P(p->pgdir));
+  }
+  else{
+    panic("page fault swap cannot be handled");
+  }
+}
+
 // Update rss value of process using physical page with address pa
 void change_rss(uint pa, int d){
   for(int z=0; z<NPROC; z++){

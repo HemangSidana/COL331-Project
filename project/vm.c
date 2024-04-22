@@ -347,8 +347,7 @@ copyuvm(pde_t *pgdir, uint sz, struct proc* p)
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
       panic("copyuvm: pte should exist");
-    if(!(*pte & PTE_P))
-      panic("copyuvm: page not present");
+    if(!(*pte & PTE_P)) page_fault_swap(pte);
     pa = PTE_ADDR(*pte);
     *pte &= ~PTE_W;
     flags = PTE_FLAGS(*pte);

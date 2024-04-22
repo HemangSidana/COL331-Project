@@ -207,6 +207,7 @@ void            unset_access(pde_t*,int);
 void            allocate_page();
 void            clean_swap(pde_t*);
 void            page_fault();
+void            page_fault_swap(pte_t*);
 void            recover_swap(uint, uint);
 void            change_rss(uint, int);
 
